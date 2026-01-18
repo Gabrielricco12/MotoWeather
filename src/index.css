@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+:root {
+  background-color: #f8fafc; /* slate-50 */
+  color: #0f172a; /* slate-900 */
+  height: 100%;
+  margin: 0;
+}
+
+body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  overflow: hidden; /* Evita barras de rolagem duplas no mobile */
+}
+
+/* Opcional: Estiliza a barra de rolagem para ficar mais bonita no painel lateral */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
