@@ -5,16 +5,18 @@ import {
 import axios from 'axios';
 import { 
   Wind, Thermometer, Search, Circle, Square, Clock, 
-  CloudRain, Sun, Cloud, CloudLightning, Snowflake, Droplets 
+  CloudRain, Sun, Cloud, CloudLightning, Snowflake, Droplets, CloudFog 
 } from 'lucide-react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { useRive, Layout, Fit, Alignment } from '@rive-app/react-canvas';
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyBjtpmPfw4t0Ofkadeb-wx8tmG3D4gtPqg'; 
+// ⚠️ SUAS CHAVES
+const GOOGLE_MAPS_API_KEY ='AIzaSyBjtpmPfw4t0Ofkadeb-wx8tmG3D4gtPqg'; 
 const MAP_ID = 'DEMO_MAP_ID'; 
-// Crie sua chave grátis em: https://home.openweathermap.org/api_keys
-const OPENWEATHER_API_KEY = '46926fb623685d1c8bb25e05215cb929'; 
+
+// ⚠️ CHAVE DA TOMORROW.IO (Pegue em app.tomorrow.io)
+const TOMORROW_API_KEY = 'DFAhzJrNFJuPJqpqHU4k8w9NvUC0A2os'; 
 
 function App() {
   const [position, setPosition] = useState(null);
@@ -31,20 +33,22 @@ function App() {
   const routePanelRef = useRef();
   const distanceRef = useRef({ value: 0 });
 
+  // 1. GPS Inicial
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        fetchCurrentWeather(pos.coords.latitude, pos.coords.longitude);
+        fetchTomorrowWeather(pos.coords.latitude, pos.coords.longitude);
       },
       () => {
-        const recife = { lat: -8.0476, lng: -34.8770 };
+        const recife = { lat: -8.0476, lng: -34.8770 }; // Fallback
         setPosition(recife);
-        fetchCurrentWeather(recife.lat, recife.lng);
+        fetchTomorrowWeather(recife.lat, recife.lng);
       }
     );
   }, []);
 
+  // 2. Animações GSAP
   useGSAP(() => {
     if (currentWeather && weatherPanelRef.current) {
       gsap.fromTo(weatherPanelRef.current, { y: 100, opacity: 0 }, { y: 0, opacity: 1, duration: 1, ease: "power3.out", delay: 0.2 });
@@ -65,21 +69,31 @@ function App() {
     }
   }, { dependencies: [routeInfo] });
 
-  const fetchCurrentWeather = async (lat, lng) => {
-    if (!OPENWEATHER_API_KEY) return;
+  // --- FUNÇÃO DE CLIMA: TOMORROW.IO ---
+  const fetchTomorrowWeather = async (lat, lng) => {
+    if (!TOMORROW_API_KEY) return;
     try {
-      const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lng}&units=metric&lang=pt_br&cnt=1&appid=${OPENWEATHER_API_KEY}`;
+      // Endpoint Forecast (v4)
+      const url = `https://api.tomorrow.io/v4/weather/forecast?location=${lat},${lng}&apikey=${TOMORROW_API_KEY}&units=metric`;
       const res = await axios.get(url);
-      const data = res.data.list[0];
+      
+      // A Tomorrow retorna timelines. Vamos pegar a "Hourly" (hora atual)
+      // data.timelines.hourly[0] é a previsão para "agora/próxima hora"
+      const now = res.data.timelines.hourly[0].values;
+      
       setCurrentWeather({
-        temp: data.main.temp,
-        description: data.weather[0].description,
-        iconCode: data.weather[0].icon,
-        pop: data.pop * 100,
-        wind: data.wind.speed,
-        humidity: data.main.humidity
+        temp: now.temperature,
+        description: getTomorrowDescription(now.weatherCode), // Função auxiliar para traduzir o código
+        iconCode: now.weatherCode, // Código numérico (ex: 1000, 4001)
+        pop: now.precipitationProbability, // Já vem em % (0-100)
+        wind: now.windSpeed,
+        humidity: now.humidity
       });
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        console.error("Erro Tomorrow.io:", e); 
+        // Fallback fake para não quebrar UI se a chave der erro
+        setCurrentWeather({ temp: 28, description: "Erro API", iconCode: 1000, pop: 0, wind: 10, humidity: 60 });
+    }
   };
 
   return (
@@ -111,7 +125,8 @@ function App() {
             >
               <div className="flex flex-col items-center group transition-transform hover:scale-110">
                 <div className="bg-white/95 backdrop-blur-md p-1.5 rounded-full shadow-lg border border-gray-200">
-                  <DynamicWeatherIcon iconCode={point.iconCode} size={22} />
+                  {/* Ícone mapeado para Tomorrow.io */}
+                  <DynamicTomorrowIcon code={point.iconCode} size={22} />
                 </div>
                 <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white/95 shadow-sm mt-[-2px]"></div>
                 
@@ -129,20 +144,18 @@ function App() {
             </AdvancedMarker>
           ))}
 
-          {/* --- INFO WINDOW CORRIGIDA (VISIBILIDADE MELHORADA) --- */}
+          {/* InfoWindow Detalhada */}
           {activeWeatherPoint && (
             <InfoWindow
               position={activeWeatherPoint.coords}
               onCloseClick={() => setActiveWeatherPoint(null)}
               headerDisabled={true}
-              maxWidth={220} // Um pouco mais largo
+              maxWidth={220}
             >
               <div className="p-1">
-                {/* Título mais forte */}
                 <h3 className="font-black text-gray-900 text-base mb-3 border-b border-gray-100 pb-2">
                   {activeWeatherPoint.locationName}
                 </h3>
-                
                 <div className="space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-2 text-gray-500 font-medium">
@@ -152,16 +165,14 @@ function App() {
                       {Math.round(activeWeatherPoint.pop)}%
                     </span>
                   </div>
-
                   <div className="flex items-center justify-between text-sm">
                     <span className="flex items-center gap-2 text-gray-500 font-medium">
                        <Wind size={16} className="text-gray-400" /> Vento
                     </span>
                     <span className="font-bold text-gray-800">
-                      {activeWeatherPoint.wind} km/h
+                      {activeWeatherPoint.wind} m/s
                     </span>
                   </div>
-
                   <div className="flex items-center justify-between text-sm">
                      <span className="flex items-center gap-2 text-gray-500 font-medium">
                        <Thermometer size={16} className="text-orange-500" /> Temp
@@ -171,21 +182,18 @@ function App() {
                     </span>
                   </div>
                   
-                  {/* --- MUDANÇA PRINCIPAL AQUI --- */}
-                  {/* Fundo cinza, texto escuro e negrito para leitura fácil */}
                   <div className="mt-3 pt-2">
                     <p className="bg-gray-100 text-gray-700 text-xs font-bold text-center py-1.5 rounded-lg capitalize border border-gray-200">
                       {activeWeatherPoint.description}
                     </p>
                   </div>
-
                 </div>
               </div>
             </InfoWindow>
           )}
-
         </Map>
 
+        {/* UI Topo */}
         <div className="absolute top-0 left-0 right-0 p-4 z-30 pointer-events-none">
           <div className="mx-auto max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 p-4 flex gap-3 relative pointer-events-auto">
             <div className="flex flex-col items-center pt-2 gap-1">
@@ -217,6 +225,7 @@ function App() {
           )}
         </div>
 
+        {/* HUD Base */}
         {currentWeather && (
           <div ref={weatherPanelRef} className="absolute bottom-0 left-0 right-0 p-4 z-20 pointer-events-none">
             <div className="mx-auto max-w-lg rounded-[2rem] bg-white/95 backdrop-blur-xl border border-blue-100 p-5 shadow-2xl pointer-events-auto">
@@ -246,6 +255,7 @@ function App() {
   );
 }
 
+// --- CONTROLLER TOMORROW.IO ---
 function DirectionsController({ origin, destination, setDirectionsResponse, setRouteInfo, setRouteWeatherPoints }) {
   const map = useMap();
   const routesLibrary = useMapsLibrary('routes');
@@ -268,10 +278,10 @@ function DirectionsController({ origin, destination, setDirectionsResponse, setR
       const route = response.routes[0].legs[0];
       setRouteInfo({ distance: route.distance.text, duration: route.duration.text });
 
-      if (OPENWEATHER_API_KEY && route.steps) {
+      if (TOMORROW_API_KEY && route.steps) {
         const overviewPath = response.routes[0].overview_path; 
         const totalPoints = overviewPath.length;
-        const samples = 5;
+        const samples = 5; 
         const stepSize = Math.floor(totalPoints / (samples - 1));
         const pointsToFetch = [];
 
@@ -282,26 +292,28 @@ function DirectionsController({ origin, destination, setDirectionsResponse, setR
         }
 
         const weatherPromises = pointsToFetch.map(p => 
-          axios.get(`https://api.openweathermap.org/data/2.5/forecast?lat=${p.lat}&lon=${p.lng}&units=metric&lang=pt_br&cnt=1&appid=${OPENWEATHER_API_KEY}`)
+          axios.get(`https://api.tomorrow.io/v4/weather/forecast?location=${p.lat},${p.lng}&apikey=${TOMORROW_API_KEY}&units=metric`)
         );
 
         try {
           const results = await Promise.all(weatherPromises);
           const weatherMarkers = results.map((res, i) => {
-            const d = res.data.list[0];
-            const city = res.data.city; 
+            const now = res.data.timelines.hourly[0].values;
+            // A Tomorrow não retorna nome da cidade na API de Clima, 
+            // então usamos "Ponto X" ou teríamos que usar o Geocoding do Google.
+            // Para simplificar, usamos "Ponto da Rota".
             return {
               coords: pointsToFetch[i],
-              temp: d.main.temp,
-              iconCode: d.weather[0].icon,
-              description: d.weather[0].description,
-              pop: d.pop * 100,      
-              wind: d.wind.speed,    
-              locationName: city ? city.name : "Na Rota" 
+              temp: now.temperature,
+              iconCode: now.weatherCode,
+              description: getTomorrowDescription(now.weatherCode),
+              pop: now.precipitationProbability,
+              wind: now.windSpeed,
+              locationName: `Ponto ${i + 1} da Rota` 
             };
           });
           setRouteWeatherPoints(weatherMarkers);
-        } catch (err) { console.error("Erro clima rota:", err); }
+        } catch (err) { console.error("Erro Tomorrow Rota:", err); }
       }
 
     }).catch(e => console.error("Erro rota:", e));
@@ -362,16 +374,31 @@ const PlaceAutocomplete = ({ onPlaceSelect }) => {
   );
 };
 
-function DynamicWeatherIcon({ iconCode, size = 50 }) {
-  const code = iconCode?.substring(0, 2);
+// --- NOVOS HELPERS (TOMORROW.IO) ---
+function DynamicTomorrowIcon({ code, size = 50 }) {
+  // Códigos oficiais: https://docs.tomorrow.io/reference/data-layers-weather-codes
   switch(code) {
-    case '01': return <Sun size={size} className="text-yellow-500 animate-[spin_10s_linear_infinite]" />;
-    case '02': case '03': case '04': return <Cloud size={size} className="text-gray-400" />;
-    case '09': case '10': return <CloudRain size={size} className="text-blue-500 animate-bounce" />;
-    case '11': return <CloudLightning size={size} className="text-purple-600 animate-pulse" />;
-    case '13': return <Snowflake size={size} className="text-cyan-400 animate-spin-slow" />;
+    case 1000: return <Sun size={size} className="text-yellow-500 animate-[spin_10s_linear_infinite]" />; // Clear
+    case 1100: case 1101: return <Sun size={size} className="text-yellow-400" />; // Mostly Clear
+    case 1102: return <Cloud size={size} className="text-gray-400" />; // Mostly Cloudy
+    case 1001: return <Cloud size={size} className="text-gray-500" />; // Cloudy
+    case 2000: case 2100: return <CloudFog size={size} className="text-gray-300 animate-pulse" />; // Fog
+    case 4000: return <CloudRain size={size} className="text-blue-400 animate-bounce" />; // Drizzle
+    case 4001: return <CloudRain size={size} className="text-blue-600 animate-bounce" />; // Rain
+    case 4200: case 4201: return <CloudRain size={size} className="text-blue-700 animate-bounce" />; // Heavy Rain
+    case 8000: return <CloudLightning size={size} className="text-purple-600 animate-pulse" />; // Thunderstorm
+    case 5000: case 5100: return <Snowflake size={size} className="text-cyan-400 animate-spin-slow" />; // Snow
     default: return <Sun size={size} className="text-yellow-500" />;
   }
+}
+
+function getTomorrowDescription(code) {
+  const map = {
+    1000: "Céu Limpo", 1100: "Quase Limpo", 1101: "Parc. Nublado", 1102: "Muito Nublado",
+    1001: "Nublado", 2000: "Nevoeiro", 4000: "Garoa", 4001: "Chuva", 
+    4200: "Chuva Leve", 4201: "Chuva Forte", 8000: "Tempestade", 5000: "Neve"
+  };
+  return map[code] || "Desconhecido";
 }
 
 export default App;
